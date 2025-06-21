@@ -1,5 +1,5 @@
 [package]
-name = "kobo_stats"
+name = "kobo-reader-db"
 version = "0.1.0"
 edition = "2021"
 
