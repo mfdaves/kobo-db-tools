@@ -11,7 +11,7 @@ impl EventType {
             EventType::DictionaryLookup => vec!["dictionarylookup"],
             EventType::ReadingSession => vec!["opencontent", "leavecontent"],
             EventType::BrightnessAdjusted => vec!["brightnessadjusted"],
-            EventType::Unknown(_) => vec!["unknown"],  // valore statico di fallback
+            EventType::Unknown(_) => vec!["unknown"], // valore statico di fallback
         }
     }
 }

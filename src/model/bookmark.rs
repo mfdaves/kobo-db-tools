@@ -1,5 +1,4 @@
-use serde::{Serialize};
-
+use serde::Serialize;
 
 #[derive(Debug, Serialize)]
 pub struct Bookmark {
@@ -12,8 +11,6 @@ pub struct Bookmark {
     create_date: String,
     write_date: String,
 }
-
-
 
 // fn get_bookmarks(db: &Connection) -> Result<Vec<Bookmark>> {
 //     let mut stmt = db.prepare(
