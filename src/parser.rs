@@ -1,4 +1,4 @@
-use crate::model::{ReadingSession, ReadingSessions};
+use crate::model::{ReadingSession, ReadingSessions,DictionaryWord};
 use chrono::{DateTime, Utc};
 use rusqlite::Connection;
 use std::collections::HashMap;
@@ -8,11 +8,11 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum ParseError {
-    #[error("Evento non valido")]
+    #[error("Event is not valid")]
     InvalidEventType,
-    #[error("Errore completando sessione")]
+    #[error("Error during session completation")]
     SessionCompletionFailed,
-    #[error("Errore nella deserializzazione")]
+    #[error("Error during deserialize")]
     DeserializationError,
 }
 
@@ -40,24 +40,21 @@ struct LeaveContentMetrics {
     #[serde(rename = "SecondsRead")]
     seconds_read: usize,
 }
+#[derive(serde::Deserialize)]
+struct LightAttributes{
+    #[serde(alias = "NewNaturalLight")]
+    #[serde(alias = "NewBrightness")]
+    new_light:u8,
+    #[serde(alias = "OldNaturalLight")]
+    #[serde(alias = "OldBrightness")]
+    old_light:u8
+}
 
 // === Dictionary ===
 
 //in realtà sarebbe interessante per esempio
 //sapere a quale sessione di lettura è associata la word e il term cosi da inserire poi un
 //session_id attribute che permette la sua identificazione
-#[derive(Debug, PartialEq, Eq, Hash)]
-pub struct Term {
-    pub word: String,
-    pub lang: String,
-}
-
-impl Term {
-    fn new(word: String, lang: String) -> Self {
-        Self { word, lang }
-    }
-}
-
 #[derive(serde::Deserialize)]
 struct DicitonaryAttributes {
     #[serde(rename = "Dictionary")]

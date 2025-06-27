@@ -1,12 +1,8 @@
 use rusqlite::{Connection,OpenFlags};
 use std::collections::HashMap; 
+use kobo_reader_db::model::*; 
+use kobo_reader_db::parser::*; 
 
-
-mod parser;
-mod model;
-
-use parser::*;
-use model::*;
 
 
 fn main()->Result<(),()>{
@@ -15,32 +11,5 @@ fn main()->Result<(),()>{
     let ae = get_events(&conn);
 
     let ss = ae.unwrap().sessions;
-
-
-    let interesting_metrics = vec![
-        ReadingMetric::SecondsRead
-    ];
-
-    let percs: &[f64] = &[0.0,0.25,0.5,0.75,1.0];
-
-    if ss.sessions_count() == 0 {
-        return Err(());
-    } else{
-        let percentiles: Vec<Vec<f64>> = interesting_metrics
-            .iter()
-            .map(|m| ss.calculate_percentile(*m,percs))
-            .collect();
-
-        for p in percentiles.iter(){
-            for px in p.iter(){
-                println!("{:?}", px/60.0);
-            }
-        } 
-    }
-
-
-
-
-
     Ok(()) 
 }

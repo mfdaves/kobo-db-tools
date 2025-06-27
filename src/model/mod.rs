@@ -5,5 +5,4 @@ pub mod session;
 
 pub use bookmark::*;
 pub use dictionary::*;
-pub use event_type::*;
-pub use session::*;
+pub use session;
