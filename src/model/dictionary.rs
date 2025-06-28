@@ -1,3 +1,4 @@
+#[derive(Debug,Clone,Eq,Hash,PartialEq)]
 pub struct DictionaryWord {
     term: String,
     lang: String,

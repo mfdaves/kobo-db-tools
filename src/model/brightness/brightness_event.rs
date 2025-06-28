@@ -1,8 +1,10 @@
+use chrono::{DateTime, Utc};
+
 use super::brightness::Brightness;
 #[derive(Debug,Clone)]
-struct BrightnessEvent{
-	brightness:Brightness, 
-	timestamp:DateTime<Utc>
+pub struct BrightnessEvent{
+	pub brightness:Brightness, 
+	pub timestamp:DateTime<Utc>
 }
 
 impl BrightnessEvent{

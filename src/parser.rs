@@ -1,10 +1,12 @@
-use crate::model::{ReadingSession, ReadingSessions,DictionaryWord};
+use crate::model::{
+    Brightness, BrightnessEvent, BrightnessHistory, DictionaryWord, NaturalLightHistory,
+    ReadingSession, ReadingSessions,
+};
 use chrono::{DateTime, Utc};
 use rusqlite::Connection;
 use std::collections::HashMap;
 use std::str::FromStr;
 use thiserror::Error;
-// === Errori ===
 
 #[derive(Debug, Error)]
 pub enum ParseError {
@@ -16,45 +18,36 @@ pub enum ParseError {
     DeserializationError,
 }
 
-// === Dati degli attributi per ReadingSession ===
-
 #[derive(serde::Deserialize, Clone)]
 struct ReadingSessionAttributes {
     progress: String,
     volumeid: Option<String>,
     title: Option<String>,
-    Monetization: String,
-    author: Option<String>,
 }
 
 #[derive(serde::Deserialize)]
 struct LeaveContentMetrics {
     #[serde(rename = "ButtonPressCount")]
     button_press_count: usize,
-    #[serde(rename = "IdleTime")]
-    idle_time: usize,
-    #[serde(rename = "PagesTurned")]
-    pages_turned: usize,
-    #[serde(rename = "PercentageLandscapePageTurns")]
-    prc_landscape_page_turns: u8,
     #[serde(rename = "SecondsRead")]
     seconds_read: usize,
+    #[serde(rename = "PagesTurned")]
+    pages_turned: usize,
 }
+
 #[derive(serde::Deserialize)]
-struct LightAttributes{
+struct LightAttributes {
+    #[serde(rename = "Method")]
+    method: String,
+}
+
+#[derive(serde::Deserialize)]
+struct LightMetrics {
     #[serde(alias = "NewNaturalLight")]
     #[serde(alias = "NewBrightness")]
-    new_light:u8,
-    #[serde(alias = "OldNaturalLight")]
-    #[serde(alias = "OldBrightness")]
-    old_light:u8
+    new_light: u8,
 }
 
-// === Dictionary ===
-
-//in realtà sarebbe interessante per esempio
-//sapere a quale sessione di lettura è associata la word e il term cosi da inserire poi un
-//session_id attribute che permette la sua identificazione
 #[derive(serde::Deserialize)]
 struct DicitonaryAttributes {
     #[serde(rename = "Dictionary")]
@@ -63,21 +56,20 @@ struct DicitonaryAttributes {
     word: String,
 }
 
-// === Risultato aggregato ===
 #[derive(Debug)]
 pub struct EventAnalysis {
     pub sessions: ReadingSessions,
-    pub terms: HashMap<Term, usize>,
+    pub terms: HashMap<DictionaryWord, usize>,
+    pub brightness_history: BrightnessHistory,
+    pub natural_light_history: NaturalLightHistory,
 }
-
-// === Funzione principale ===
 
 pub fn get_events(db: &Connection) -> rusqlite::Result<EventAnalysis> {
     let q = "SELECT Id, Type, Timestamp, Attributes, Metrics
              FROM AnalyticsEvents
-             WHERE Type IN 
-             (  'OpenContent', 'LeaveContent', 
-                'DictionaryLookup', 
+             WHERE Type IN
+             (  'OpenContent', 'LeaveContent',
+                'DictionaryLookup',
                 'BrightnessAdjusted','NaturalLightAdjusted'
              )
              ORDER BY Timestamp ASC;";
@@ -88,6 +80,8 @@ pub fn get_events(db: &Connection) -> rusqlite::Result<EventAnalysis> {
     let mut analysis = EventAnalysis {
         sessions: ReadingSessions::new(),
         terms: HashMap::new(),
+        brightness_history: BrightnessHistory::new(),
+        natural_light_history: NaturalLightHistory::new(),
     };
 
     let mut current_session: Option<ReadingSession> = None;
@@ -96,16 +90,15 @@ pub fn get_events(db: &Connection) -> rusqlite::Result<EventAnalysis> {
         let event_id: String = row.get("Id")?;
         let event_type: String = row.get("Type")?;
         let ts_str: String = row.get("Timestamp")?;
-        let attr_json: String = row.get("Attributes")?;
         let ts = DateTime::<Utc>::from_str(&ts_str).map_err(|e| {
             rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e))
         })?;
 
-        // Parsing attributi in base al tipo evento
         match event_type.as_str() {
             "OpenContent" | "LeaveContent" => {
-                let attr: ReadingSessionAttributes =
-                    serde_json::from_str(&attr_json).map_err(|e| {
+                let attr_json: String = row.get("Attributes")?;
+                let attr: ReadingSessionAttributes = serde_json::from_str(&attr_json)
+                    .map_err(|e| {
                         rusqlite::Error::FromSqlConversionFailure(
                             1,
                             rusqlite::types::Type::Text,
@@ -116,15 +109,15 @@ pub fn get_events(db: &Connection) -> rusqlite::Result<EventAnalysis> {
 
                 let metrics = if event_type == "LeaveContent" {
                     let metr_json: String = row.get("Metrics")?;
-                    Some(
-                        serde_json::from_str::<LeaveContentMetrics>(&metr_json).map_err(|e| {
+                    Some(serde_json::from_str::<LeaveContentMetrics>(&metr_json).map_err(
+                        |e| {
                             rusqlite::Error::FromSqlConversionFailure(
                                 2,
                                 rusqlite::types::Type::Text,
                                 Box::new(e),
                             )
-                        })?,
-                    )
+                        },
+                    )?)
                 } else {
                     None
                 };
@@ -144,15 +137,24 @@ pub fn get_events(db: &Connection) -> rusqlite::Result<EventAnalysis> {
                 }
             }
             "DictionaryLookup" => {
+                let attr_json: String = row.get("Attributes")?;
                 *analysis
                     .terms
                     .entry(on_dictionary_lookup(attr_json)?)
                     .or_insert(0) += 1;
             }
             "BrightnessAdjusted" => {
-                // TODO: handle_light_event(...)
+                let attr_json: String = row.get("Attributes")?;
+                let metr_json: String = row.get("Metrics")?;
+                let event = on_light_adjusted(attr_json, metr_json, ts)?;
+                analysis.brightness_history.insert(event);
             }
-            "NaturalLightAdjusted" => {}
+            "NaturalLightAdjusted" => {
+                let attr_json: String = row.get("Attributes")?;
+                let metr_json: String = row.get("Metrics")?;
+                let event = on_light_adjusted(attr_json, metr_json, ts)?;
+                analysis.natural_light_history.insert(event);
+            }
             _ => {
                 eprintln!("Unknown event: {}", event_type);
             }
@@ -182,7 +184,6 @@ fn handle_reading_session_event(
             Ok(None)
         }
         "LeaveContent" => {
-            // println!("{:?}", current_session);
             if let Some(ref mut session) = current_session {
                 let open_content_id = session.open_content_id.clone();
                 let m = metrics.ok_or(ParseError::SessionCompletionFailed)?;
@@ -211,10 +212,24 @@ fn handle_reading_session_event(
     }
 }
 
-fn on_dictionary_lookup(attr_json: String) -> rusqlite::Result<Term> {
+fn on_dictionary_lookup(attr_json: String) -> rusqlite::Result<DictionaryWord> {
     let attr: DicitonaryAttributes = serde_json::from_str(&attr_json).map_err(|e| {
         rusqlite::Error::FromSqlConversionFailure(1, rusqlite::types::Type::Text, Box::new(e))
     })?;
-    Ok(Term::new(attr.word, attr.lang))
+    Ok(DictionaryWord::new(attr.word, attr.lang))
 }
 
+fn on_light_adjusted(
+    attr_json: String,
+    metr_json: String,
+    ts: DateTime<Utc>,
+) -> rusqlite::Result<BrightnessEvent> {
+    let attributes: LightAttributes = serde_json::from_str(&attr_json).map_err(|e| {
+        rusqlite::Error::FromSqlConversionFailure(1, rusqlite::types::Type::Text, Box::new(e))
+    })?;
+    let metrics: LightMetrics = serde_json::from_str(&metr_json).map_err(|e| {
+        rusqlite::Error::FromSqlConversionFailure(1, rusqlite::types::Type::Text, Box::new(e))
+    })?;
+    let brightness = Brightness::new(attributes.method, metrics.new_light);
+    Ok(BrightnessEvent::new(brightness, ts))
+}

@@ -1,12 +1,12 @@
 #[derive(Debug,Clone)]
-struct Brightness{
-	method:String,
-	percentage:u8
+pub struct Brightness{
+	pub method:String,
+	pub percentage:u8
 }
 
 
 impl Brightness {
-	pub new(method:String,percentage:u8)->Self{
+	pub fn new(method:String,percentage:u8)->Self{
 		Self{
 			method,
 			percentage

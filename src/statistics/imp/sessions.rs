@@ -1,7 +1,12 @@
-use::crate::statistics::Statistics;
+use crate::Statistics;           
+use crate::{ReadingSessions, ReadingMetric}; 
+use std::cmp::Ordering; 
 
 impl Statistics for ReadingSessions{
-    pub fn avg(&self) -> f64 {
+
+    type Metric = ReadingMetric; 
+    
+    fn avg(&self) -> f64 {
 	    let valid_sessions_seconds: Vec<f64> = self
 	        .valid_sessions()
 	        .filter_map(|s| s.seconds_read.map(|sec| sec as f64))
@@ -13,7 +18,7 @@ impl Statistics for ReadingSessions{
 	        valid_sessions_seconds.iter().sum::<f64>() / valid_sessions_seconds.len() as f64
 	    }
     }
-    pub fn calculate_percentile(&self, metric: ReadingMetric, percentiles: &[f64]) -> Vec<f64> {
+    fn calculate_percentile(&self, metric: ReadingMetric, percentiles: &[f64]) -> Vec<f64> {
         let mut values: Vec<f64> = self
             .valid_sessions()
             .map(|s| match metric {

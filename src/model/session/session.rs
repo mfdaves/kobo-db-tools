@@ -1,8 +1,7 @@
 use chrono::{DateTime, Duration, Utc};
 use uuid::Uuid;
-use std::cmp::Ordering;
 
-const MIN_VALID_SESSION_TIME: u64 = 60;
+
 
 #[derive(Debug,Clone,Copy)]
 pub enum ReadingMetric {
@@ -90,37 +89,5 @@ impl ReadingSession {
 
     pub fn duration(&self) -> Option<Duration> {
         self.time_end.map(|end| end - self.time_start)
-    }
-}
-
-#[derive(Debug)]
-pub struct ReadingSessions {
-    sessions: Vec<ReadingSession>,
-}
-
-impl ReadingSessions {
-    pub fn new() -> Self {
-        Self {
-            sessions: Vec::new(),
-        }
-    }
-    pub fn add_session(&mut self, session: ReadingSession) {
-        self.sessions.push(session);
-    }
-    pub fn iter(&self) -> impl Iterator<Item = &ReadingSession> {
-        self.sessions.iter().filter(|s| {
-            s.is_complete()
-                && s.seconds_read
-                    .map(|sec| sec >= MIN_VALID_SESSION_TIME)
-                    .unwrap_or(false)
-        })
-    }
-    fn valid_sessions(&self) -> impl Iterator<Item = &ReadingSession> {
-        self.sessions.iter().filter(|s| {
-            s.is_complete() && s.seconds_read.unwrap_or(0) >= MIN_VALID_SESSION_TIME
-        })
-    }
-    pub fn sessions_count(&self) -> usize {
-        self.sessions.len()
     }
 }

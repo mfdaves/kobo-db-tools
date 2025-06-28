@@ -1,11 +1,11 @@
 use crate::model::brightness::brightness_event::BrightnessEvent;
 
 #[derive(Debug,Clone)]
-pub struct BrightnessHistory{
+pub struct NaturalLightHistory{
 	pub events:Vec<BrightnessEvent>
 }
 
-impl BrightnessHistory {
+impl NaturalLightHistory {
 	pub fn new()->Self{
 		Self{
 			events:Vec::new()
