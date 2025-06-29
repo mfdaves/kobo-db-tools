@@ -1,6 +1,6 @@
-# kobo-reader-db: Reclaim Your Kobo Reading Data
+# kobo-db-tools: Reclaim Your Kobo Reading Data
 
-Welcome to `kobo-reader-db`, a project born from the frustration of limited access to personal reading data on Kobo devices and a commitment to empowering users with full control over their information.
+Welcome to `kobo-db-tools`, a project born from the frustration of limited access to personal reading data on Kobo devices and a commitment to empowering users with full control over their information.
 
 ## The Problem: Kobo and Data Ephemerality
 
@@ -14,7 +14,7 @@ The only remaining trace resides in the `Event` table, within the `ExtraData` fi
 
 ## The Solution: Empowering Data Ownership
 
-`kobo-reader-db` offers a solution to this challenge, enabling you to extract and analyze your reading data before it is purged. There are two primary strategies to ensure you never lose your reading statistics again:
+`kobo-db-tools` offers a solution to this challenge, enabling you to extract and analyze your reading data before it is purged. There are two primary strategies to ensure you never lose your reading statistics again:
 
 1.  **Offline Operation:** The simplest, though less practical, method. Avoid connecting your Kobo to the internet. While this prevents data deletion, it naturally limits synchronization and update functionalities.
 
@@ -33,7 +33,7 @@ The only remaining trace resides in the `Event` table, within the `ExtraData` fi
 
     **Caution:** Modifying your Kobo's database carries inherent risks. Always back up your `KoboReader.sqlite` file before making any changes. This trigger is an example and may require specific adaptations for your Kobo's firmware version.
 
-## Project Overview: What `kobo-reader-db` Does
+## Project Overview: What `kobo-db-tools` Does
 
 This Rust project provides tools to:
 
@@ -43,7 +43,7 @@ This Rust project provides tools to:
 
 ### Future Enhancements and Analytical Perspectives
 
-`kobo-reader-db` aims to evolve, offering more sophisticated analytical capabilities and data export options:
+`kobo-db-tools` aims to evolve, offering more sophisticated analytical capabilities and data export options:
 
 *   **Enhanced Statistical Analysis:** Beyond basic metrics, future versions will enable deeper insights, such as:
     *   Associating specific brightness adjustments with individual reading sessions.
@@ -68,4 +68,4 @@ This project is released under the [MIT License](LICENSE). (Please add the LICEN
 
 ---
 
-We hope `kobo-reader-db` proves useful in exploring your reading data and reclaiming control over your digital information!
+We hope `kobo-db-tools` proves useful in exploring your reading data and reclaiming control over your digital information!
