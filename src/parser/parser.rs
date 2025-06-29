@@ -5,9 +5,9 @@ use crate::{
 use chrono::{DateTime, Utc};
 use rusqlite::Connection;
 use std::collections::HashMap;
+use std::path::Path;
 use std::str::FromStr;
 use thiserror::Error;
-use std::path::Path;
 
 #[derive(Debug, Error)]
 pub enum ParseError {
@@ -57,113 +57,189 @@ struct DicitonaryAttributes {
     word: String,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
+pub enum ParseOption {
+    All,
+    ReadingSessions,
+    DictionaryLookups,
+    BrightnessHistory,
+    NaturalLightHistory,
+    Bookmarks,
+}
+
+#[derive(Debug, Default)]
 pub struct EventAnalysis {
-    pub sessions: ReadingSessions,
-    pub terms: HashMap<DictionaryWord, usize>,
-    pub brightness_history: BrightnessHistory,
-    pub natural_light_history: NaturalLightHistory,
-    pub bookmarks: Vec<Bookmark>,
+    pub sessions: Option<ReadingSessions>,
+    pub terms: Option<HashMap<DictionaryWord, usize>>,
+    pub brightness_history: Option<BrightnessHistory>,
+    pub natural_light_history: Option<NaturalLightHistory>,
+    pub bookmarks: Option<Vec<Bookmark>>,
 }
 
 pub struct Parser;
 
 impl Parser {
-    pub fn parse_events(db: &Connection) -> rusqlite::Result<EventAnalysis> {
-        let q = "SELECT Id, Type, Timestamp, Attributes, Metrics\n                 FROM AnalyticsEvents\n                 WHERE Type IN\n                 (  'OpenContent', 'LeaveContent',\n                    'DictionaryLookup',\n                    'BrightnessAdjusted','NaturalLightAdjusted'\n                 )\n                 ORDER BY Timestamp ASC;";
+    pub fn parse_events(db: &Connection, option: ParseOption) -> rusqlite::Result<EventAnalysis> {
+        let mut analysis = EventAnalysis::default();
 
-        let mut stmt = db.prepare(q)?;
-        let mut rows = stmt.query([])?;
+        let mut event_types_to_query = Vec::new();
+        let mut get_bookmarks_flag = false;
 
-        let mut analysis = EventAnalysis {
-            sessions: ReadingSessions::new(),
-            terms: HashMap::new(),
-            brightness_history: BrightnessHistory::new(),
-            natural_light_history: NaturalLightHistory::new(),
-            bookmarks: get_bookmarks(db)?,
-        };
+        match option {
+            ParseOption::All => {
+                event_types_to_query.extend_from_slice(&[
+                    "'OpenContent'",
+                    "'LeaveContent'",
+                    "'DictionaryLookup'",
+                    "'BrightnessAdjusted'",
+                    "'NaturalLightAdjusted'",
+                ]);
+                get_bookmarks_flag = true;
+            }
+            ParseOption::ReadingSessions => {
+                event_types_to_query.extend_from_slice(&["'OpenContent'", "'LeaveContent'"]);
+            }
+            ParseOption::DictionaryLookups => {
+                event_types_to_query.push("'DictionaryLookup'");
+            }
+            ParseOption::BrightnessHistory => {
+                event_types_to_query.push("'BrightnessAdjusted'");
+            }
+            ParseOption::NaturalLightHistory => {
+                event_types_to_query.push("'NaturalLightAdjusted'");
+            }
+            ParseOption::Bookmarks => {
+                get_bookmarks_flag = true;
+            }
+        }
 
-        let mut current_session: Option<ReadingSession> = None;
+        if get_bookmarks_flag {
+            analysis.bookmarks = Some(get_bookmarks(db)?);
+        }
 
-        while let Some(row) = rows.next()? {
-            let event_id: String = row.get("Id")?;
-            let event_type: String = row.get("Type")?;
-            let ts_str: String = row.get("Timestamp")?;
-            let ts = DateTime::<Utc>::from_str(&ts_str).map_err(|e| {
-                rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e))
-            })?;
+        if !event_types_to_query.is_empty() {
+            let q = format!(
+                "SELECT Id, Type, Timestamp, Attributes, Metrics FROM AnalyticsEvents WHERE Type IN ({}) ORDER BY Timestamp ASC;",
+                event_types_to_query.join(", ")
+            );
 
-            match event_type.as_str() {
-                "OpenContent" | "LeaveContent" => {
-                    let attr_json: String = row.get("Attributes")?;
-                    let attr: ReadingSessionAttributes =
-                        serde_json::from_str(&attr_json).map_err(|e| {
-                            rusqlite::Error::FromSqlConversionFailure(
-                                1,
-                                rusqlite::types::Type::Text,
-                                Box::new(e),
-                            )
-                        })?;
-                    let progress = attr.progress.parse::<u8>().unwrap_or(0);
+            let mut stmt = db.prepare(&q)?;
+            let mut rows = stmt.query([])?;
 
-                    let metrics = if event_type == "LeaveContent" {
-                        let metr_json: String = row.get("Metrics")?;
-                        Some(
-                            serde_json::from_str::<LeaveContentMetrics>(&metr_json).map_err(|e| {
+            let mut current_session: Option<ReadingSession> = None;
+            let mut sessions_vec = ReadingSessions::new();
+            let mut terms_map = HashMap::new();
+            let mut brightness_hist = BrightnessHistory::new();
+            let mut natural_light_hist = NaturalLightHistory::new();
+
+            while let Some(row) = rows.next()? {
+                let event_id: String = row.get("Id")?;
+                let event_type: String = row.get("Type")?;
+                let ts_str: String = row.get("Timestamp")?;
+                let ts = DateTime::<Utc>::from_str(&ts_str).map_err(|e| {
+                    rusqlite::Error::FromSqlConversionFailure(
+                        0,
+                        rusqlite::types::Type::Text,
+                        Box::new(e),
+                    )
+                })?;
+
+                match event_type.as_str() {
+                    "OpenContent" | "LeaveContent" => {
+                        if option == ParseOption::All || option == ParseOption::ReadingSessions {
+                            let attr_json: String = row.get("Attributes")?;
+                            let attr: ReadingSessionAttributes = serde_json::from_str(&attr_json)
+                                .map_err(|e| {
                                 rusqlite::Error::FromSqlConversionFailure(
-                                    2,
+                                    1,
                                     rusqlite::types::Type::Text,
                                     Box::new(e),
                                 )
-                            })?,
-                        )
-                    } else {
-                        None
-                    };
+                            })?;
+                            let progress = attr.progress.parse::<u8>().unwrap_or(0);
 
-                    match handle_reading_session_event(
-                        &event_type,
-                        &event_id,
-                        &mut current_session,
-                        ts,
-                        progress,
-                        &attr,
-                        metrics,
-                    ) {
-                        Ok(Some(session)) => analysis.sessions.add_session(session),
-                        Ok(None) => {}
-                        Err(e) => eprintln!("Errore evento {}: {:?}", &event_id, e),
+                            let metrics = if event_type == "LeaveContent" {
+                                let metr_json: String = row.get("Metrics")?;
+                                Some(
+                                    serde_json::from_str::<LeaveContentMetrics>(&metr_json)
+                                        .map_err(|e| {
+                                            rusqlite::Error::FromSqlConversionFailure(
+                                                2,
+                                                rusqlite::types::Type::Text,
+                                                Box::new(e),
+                                            )
+                                        })?,
+                                )
+                            } else {
+                                None
+                            };
+
+                            match handle_reading_session_event(
+                                &event_type,
+                                &event_id,
+                                &mut current_session,
+                                ts,
+                                progress,
+                                &attr,
+                                metrics,
+                            ) {
+                                Ok(Some(session)) => sessions_vec.add_session(session),
+                                Ok(None) => {}
+                                Err(e) => eprintln!("Errore evento {}: {:?}", &event_id, e),
+                            }
+                        }
+                    }
+                    "DictionaryLookup" => {
+                        if option == ParseOption::All || option == ParseOption::DictionaryLookups {
+                            let attr_json: String = row.get("Attributes")?;
+                            *terms_map
+                                .entry(on_dictionary_lookup(attr_json)?)
+                                .or_insert(0) += 1;
+                        }
+                    }
+                    "BrightnessAdjusted" => {
+                        if option == ParseOption::All || option == ParseOption::BrightnessHistory {
+                            let attr_json: String = row.get("Attributes")?;
+                            let metr_json: String = row.get("Metrics")?;
+                            let event = on_light_adjusted(attr_json, metr_json, ts)?;
+                            brightness_hist.insert(event);
+                        }
+                    }
+                    "NaturalLightAdjusted" => {
+                        if option == ParseOption::All || option == ParseOption::NaturalLightHistory
+                        {
+                            let attr_json: String = row.get("Attributes")?;
+                            let metr_json: String = row.get("Metrics")?;
+                            let event = on_light_adjusted(attr_json, metr_json, ts)?;
+                            natural_light_hist.insert(event);
+                        }
+                    }
+                    _ => {
+                        eprintln!("Unknown event: {}", event_type);
                     }
                 }
-                "DictionaryLookup" => {
-                    let attr_json: String = row.get("Attributes")?;
-                    *analysis
-                        .terms
-                        .entry(on_dictionary_lookup(attr_json)?)
-                        .or_insert(0) += 1;
-                }
-                "BrightnessAdjusted" => {
-                    let attr_json: String = row.get("Attributes")?;
-                    let metr_json: String = row.get("Metrics")?;
-                    let event = on_light_adjusted(attr_json, metr_json, ts)?;
-                    analysis.brightness_history.insert(event);
-                }
-                "NaturalLightAdjusted" => {
-                    let attr_json: String = row.get("Attributes")?;
-                    let metr_json: String = row.get("Metrics")?;
-                    let event = on_light_adjusted(attr_json, metr_json, ts)?;
-                    analysis.natural_light_history.insert(event);
-                }
-                _ => {
-                    eprintln!("Unknown event: {}", event_type);
-                }
+            }
+            if option == ParseOption::All || option == ParseOption::ReadingSessions {
+                analysis.sessions = Some(sessions_vec);
+            }
+            if option == ParseOption::All || option == ParseOption::DictionaryLookups {
+                analysis.terms = Some(terms_map);
+            }
+            if option == ParseOption::All || option == ParseOption::BrightnessHistory {
+                analysis.brightness_history = Some(brightness_hist);
+            }
+            if option == ParseOption::All || option == ParseOption::NaturalLightHistory {
+                analysis.natural_light_history = Some(natural_light_hist);
             }
         }
         Ok(analysis)
     }
-    pub fn parse_from_str<P: AsRef<Path>>(path:P)->rusqlite::Result<EventAnalysis>{
+    pub fn parse_from_str<P: AsRef<Path>>(
+        path: P,
+        option: ParseOption,
+    ) -> rusqlite::Result<EventAnalysis> {
         let conn = Connection::open(path)?;
-        Self::parse_events(&conn)
+        Self::parse_events(&conn, option)
     }
 }
 
@@ -233,4 +309,153 @@ fn on_light_adjusted(
     })?;
     let brightness = Brightness::new(attributes.method, metrics.new_light);
     Ok(BrightnessEvent::new(brightness, ts))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Parser, ParseOption};
+    use rusqlite::Connection;
+
+    fn setup_test_db() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE AnalyticsEvents (\n                Id TEXT PRIMARY KEY,\n                Type TEXT NOT NULL,\n                Timestamp TEXT NOT NULL,\n                Attributes TEXT,\n                Metrics TEXT\n            );\n            CREATE TABLE content (\n                ContentID TEXT PRIMARY KEY,\n                Title TEXT\n            );\n            CREATE TABLE Bookmark (\n                BookmarkID TEXT PRIMARY KEY,\n                Text TEXT,\n                VolumeID TEXT,\n                Color INTEGER,\n                ChapterProgress REAL,\n                DateCreated TEXT,\n                DateModified TEXT\n            );",
+        )
+        .unwrap();
+        conn
+    }
+
+    #[test]
+    fn test_parse_events_all() {
+        let db = setup_test_db();
+
+        // Insert sample data
+        db.execute(
+            "INSERT INTO AnalyticsEvents (Id, Type, Timestamp, Attributes, Metrics) VALUES (?, ?, ?, ?, ?)",
+            &[
+                "session1_open",
+                "OpenContent",
+                "2023-01-01T10:00:00Z",
+                "{\"progress\":\"0\",\"volumeid\":\"book1\",\"title\":\"Book One\"}", ""
+            ],
+        ).unwrap();
+        db.execute(
+            "INSERT INTO AnalyticsEvents (Id, Type, Timestamp, Attributes, Metrics) VALUES (?, ?, ?, ?, ?)",
+            &[
+                "session1_leave",
+                "LeaveContent",
+                "2023-01-01T10:05:00Z",
+                "{\"progress\":\"10\",\"volumeid\":\"book1\",\"title\":\"Book One\"}", "{\"ButtonPressCount\":10,\"SecondsRead\":300,\"PagesTurned\":5}"
+            ],
+        ).unwrap();
+        db.execute(
+            "INSERT INTO AnalyticsEvents (Id, Type, Timestamp, Attributes, Metrics) VALUES (?, ?, ?, ?, ?)",
+            &[
+                "dict_lookup1",
+                "DictionaryLookup",
+                "2023-01-01T10:01:00Z",
+                "{\"Dictionary\":\"en\",\"Word\":\"test\"}", ""
+            ],
+        ).unwrap();
+        db.execute(
+            "INSERT INTO AnalyticsEvents (Id, Type, Timestamp, Attributes, Metrics) VALUES (?, ?, ?, ?, ?)",
+            &[
+                "brightness_adj1",
+                "BrightnessAdjusted",
+                "2023-01-01T10:02:00Z",
+                "{\"Method\":\"manual\"}", "{\"NewBrightness\":50}"
+            ],
+        ).unwrap();
+        db.execute(
+            "INSERT INTO AnalyticsEvents (Id, Type, Timestamp, Attributes, Metrics) VALUES (?, ?, ?, ?, ?)",
+            &[
+                "natural_light_adj1",
+                "NaturalLightAdjusted",
+                "2023-01-01T10:03:00Z",
+                "{\"Method\":\"auto\"}", "{\"NewNaturalLight\":70}"
+            ],
+        ).unwrap();
+
+        db.execute(
+            "INSERT INTO content (ContentID, Title) VALUES (?, ?)",
+            &["book1", "Book One"],
+        )
+        .unwrap();
+        db.execute(
+            "INSERT INTO Bookmark (BookmarkID, Text, VolumeID, Color, ChapterProgress, DateCreated, DateModified) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            &["bookmark1", "Some text", "book1", "1", "0.5", "2023-01-01T10:06:00Z", "2023-01-01T10:06:00Z"],
+        ).unwrap();
+
+        let analysis = Parser::parse_events(&db, ParseOption::All).unwrap();
+
+        assert!(analysis.sessions.is_some());
+        assert_eq!(analysis.sessions.unwrap().sessions_count(), 1);
+
+        assert!(analysis.terms.is_some());
+        assert_eq!(analysis.terms.unwrap().len(), 1);
+
+        assert!(analysis.brightness_history.is_some());
+        assert_eq!(analysis.brightness_history.unwrap().events.len(), 1);
+
+        assert!(analysis.natural_light_history.is_some());
+        assert_eq!(analysis.natural_light_history.unwrap().events.len(), 1);
+
+        assert!(analysis.bookmarks.is_some());
+        assert_eq!(analysis.bookmarks.unwrap().len(), 1);
+    }
+
+    #[test]
+    fn test_parse_events_reading_sessions() {
+        let db = setup_test_db();
+        db.execute(
+            "INSERT INTO AnalyticsEvents (Id, Type, Timestamp, Attributes, Metrics) VALUES (?, ?, ?, ?, ?)",
+            &[
+                "session1_open",
+                "OpenContent",
+                "2023-01-01T10:00:00Z",
+                "{\"progress\":\"0\",\"volumeid\":\"book1\",\"title\":\"Book One\"}", ""
+            ],
+        ).unwrap();
+        db.execute(
+            "INSERT INTO AnalyticsEvents (Id, Type, Timestamp, Attributes, Metrics) VALUES (?, ?, ?, ?, ?)",
+            &[
+                "session1_leave",
+                "LeaveContent",
+                "2023-01-01T10:05:00Z",
+                "{\"progress\":\"10\",\"volumeid\":\"book1\",\"title\":\"Book One\"}", "{\"ButtonPressCount\":10,\"SecondsRead\":300,\"PagesTurned\":5}"
+            ],
+        ).unwrap();
+
+        let analysis = Parser::parse_events(&db, ParseOption::ReadingSessions).unwrap();
+
+        assert!(analysis.sessions.is_some());
+        assert_eq!(analysis.sessions.unwrap().sessions_count(), 1);
+        assert!(analysis.terms.is_none());
+        assert!(analysis.brightness_history.is_none());
+        assert!(analysis.natural_light_history.is_none());
+        assert!(analysis.bookmarks.is_none());
+    }
+
+    #[test]
+    fn test_parse_events_bookmarks() {
+        let db = setup_test_db();
+        db.execute(
+            "INSERT INTO content (ContentID, Title) VALUES (?, ?)",
+            &["book1", "Book One"],
+        )
+        .unwrap();
+        db.execute(
+            "INSERT INTO Bookmark (BookmarkID, Text, VolumeID, Color, ChapterProgress, DateCreated, DateModified) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            &["bookmark1", "Some text", "book1", "1", "0.5", "2023-01-01T10:06:00Z", "2023-01-01T10:06:00Z"],
+        ).unwrap();
+
+        let analysis = Parser::parse_events(&db, ParseOption::Bookmarks).unwrap();
+
+        assert!(analysis.sessions.is_none());
+        assert!(analysis.terms.is_none());
+        assert!(analysis.brightness_history.is_none());
+        assert!(analysis.natural_light_history.is_none());
+        assert!(analysis.bookmarks.is_some());
+        assert_eq!(analysis.bookmarks.unwrap().len(), 1);
+    }
 }

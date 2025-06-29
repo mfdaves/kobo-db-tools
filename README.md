@@ -41,6 +41,40 @@ This Rust project provides tools to:
 *   **Analyze Reading Sessions:** Calculate metrics such as reading time, pages turned, and more.
 *   **Track Brightness Usage:** Analyze how and when you adjust screen brightness (both manual and natural light).
 
+### How to Use
+
+To use `kobo-db-tools` in your Rust project, add it as a dependency in your `Cargo.toml`:
+
+```toml
+[dependencies]
+kobo-db-tools = "0.0.3" # Or the latest version
+```
+
+Then, you can parse a KoboReader.sqlite database and access the extracted data:
+
+```rust
+use kobo_db_tools::parser::Parser;
+use kobo_db_tools::export::{export_bookmarks, ExportFormat};
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let db_path = "path/to/your/KoboReader.sqlite"; // Replace with the actual path to your database
+
+    // Parse the database
+    let analysis = Parser::parse_from_str(db_path)?;
+
+    println!("Total reading sessions: {}", analysis.sessions.sessions_count());
+    println!("Total dictionary lookups: {}", analysis.terms.len());
+    println!("Total bookmarks: {}", analysis.bookmarks.len());
+
+    // Example: Export bookmarks to a Markdown file
+    let output_path = "bookmarks.md";
+    export_bookmarks(&analysis.bookmarks, ExportFormat::Markdown, output_path)?;
+    println!("Bookmarks exported to {}", output_path);
+
+    Ok(())
+}
+```
+
 ### Future Enhancements and Analytical Perspectives
 
 `kobo-db-tools` aims to evolve, offering more sophisticated analytical capabilities and data export options:
