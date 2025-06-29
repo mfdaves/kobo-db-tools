@@ -7,6 +7,7 @@ use rusqlite::Connection;
 use std::collections::HashMap;
 use std::str::FromStr;
 use thiserror::Error;
+use std::path::Path;
 
 #[derive(Debug, Error)]
 pub enum ParseError {
@@ -159,6 +160,10 @@ impl Parser {
             }
         }
         Ok(analysis)
+    }
+    pub fn parse_from_str<P: AsRef<Path>>(path:P)->rusqlite::Result<EventAnalysis>{
+        let conn = Connection::open(path)?;
+        Self::parse_events(&conn)
     }
 }
 
