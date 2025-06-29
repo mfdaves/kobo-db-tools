@@ -1,4 +1,4 @@
-use crate::model::{
+use crate::{
     get_bookmarks, Bookmark, Brightness, BrightnessEvent, BrightnessHistory, DictionaryWord,
     NaturalLightHistory, ReadingSession, ReadingSessions,
 };
@@ -65,104 +65,108 @@ pub struct EventAnalysis {
     pub bookmarks: Vec<Bookmark>,
 }
 
-pub fn get_events(db: &Connection) -> rusqlite::Result<EventAnalysis> {
-    let q = "SELECT Id, Type, Timestamp, Attributes, Metrics
-             FROM AnalyticsEvents
-             WHERE Type IN
-             (  'OpenContent', 'LeaveContent',
-                'DictionaryLookup',
-                'BrightnessAdjusted','NaturalLightAdjusted'
-             )
-             ORDER BY Timestamp ASC;";
+pub struct Parser;
 
-    let mut stmt = db.prepare(q)?;
-    let mut rows = stmt.query([])?;
+impl Parser {
+    pub fn parse_events(db: &Connection) -> rusqlite::Result<EventAnalysis> {
+        let q = "SELECT Id, Type, Timestamp, Attributes, Metrics
+                 FROM AnalyticsEvents
+                 WHERE Type IN
+                 (  'OpenContent', 'LeaveContent',
+                    'DictionaryLookup',
+                    'BrightnessAdjusted','NaturalLightAdjusted'
+                 )
+                 ORDER BY Timestamp ASC;";
 
-    let mut analysis = EventAnalysis {
-        sessions: ReadingSessions::new(),
-        terms: HashMap::new(),
-        brightness_history: BrightnessHistory::new(),
-        natural_light_history: NaturalLightHistory::new(),
-        bookmarks: get_bookmarks(db)?,
-    };
+        let mut stmt = db.prepare(q)?;
+        let mut rows = stmt.query([])?;
 
-    let mut current_session: Option<ReadingSession> = None;
+        let mut analysis = EventAnalysis {
+            sessions: ReadingSessions::new(),
+            terms: HashMap::new(),
+            brightness_history: BrightnessHistory::new(),
+            natural_light_history: NaturalLightHistory::new(),
+            bookmarks: get_bookmarks(db)?,
+        };
 
-    while let Some(row) = rows.next()? {
-        let event_id: String = row.get("Id")?;
-        let event_type: String = row.get("Type")?;
-        let ts_str: String = row.get("Timestamp")?;
-        let ts = DateTime::<Utc>::from_str(&ts_str).map_err(|e| {
-            rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e))
-        })?;
+        let mut current_session: Option<ReadingSession> = None;
 
-        match event_type.as_str() {
-            "OpenContent" | "LeaveContent" => {
-                let attr_json: String = row.get("Attributes")?;
-                let attr: ReadingSessionAttributes =
-                    serde_json::from_str(&attr_json).map_err(|e| {
-                        rusqlite::Error::FromSqlConversionFailure(
-                            1,
-                            rusqlite::types::Type::Text,
-                            Box::new(e),
-                        )
-                    })?;
-                let progress = attr.progress.parse::<u8>().unwrap_or(0);
+        while let Some(row) = rows.next()? {
+            let event_id: String = row.get("Id")?;
+            let event_type: String = row.get("Type")?;
+            let ts_str: String = row.get("Timestamp")?;
+            let ts = DateTime::<Utc>::from_str(&ts_str).map_err(|e| {
+                rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e))
+            })?;
 
-                let metrics = if event_type == "LeaveContent" {
-                    let metr_json: String = row.get("Metrics")?;
-                    Some(
-                        serde_json::from_str::<LeaveContentMetrics>(&metr_json).map_err(|e| {
+            match event_type.as_str() {
+                "OpenContent" | "LeaveContent" => {
+                    let attr_json: String = row.get("Attributes")?;
+                    let attr: ReadingSessionAttributes =
+                        serde_json::from_str(&attr_json).map_err(|e| {
                             rusqlite::Error::FromSqlConversionFailure(
-                                2,
+                                1,
                                 rusqlite::types::Type::Text,
                                 Box::new(e),
                             )
-                        })?,
-                    )
-                } else {
-                    None
-                };
+                        })?;
+                    let progress = attr.progress.parse::<u8>().unwrap_or(0);
 
-                match handle_reading_session_event(
-                    &event_type,
-                    &event_id,
-                    &mut current_session,
-                    ts,
-                    progress,
-                    &attr,
-                    metrics,
-                ) {
-                    Ok(Some(session)) => analysis.sessions.add_session(session),
-                    Ok(None) => {}
-                    Err(e) => eprintln!("Errore evento {}: {:?}", &event_id, e),
+                    let metrics = if event_type == "LeaveContent" {
+                        let metr_json: String = row.get("Metrics")?;
+                        Some(
+                            serde_json::from_str::<LeaveContentMetrics>(&metr_json).map_err(|e| {
+                                rusqlite::Error::FromSqlConversionFailure(
+                                    2,
+                                    rusqlite::types::Type::Text,
+                                    Box::new(e),
+                                )
+                            })?,
+                        )
+                    } else {
+                        None
+                    };
+
+                    match handle_reading_session_event(
+                        &event_type,
+                        &event_id,
+                        &mut current_session,
+                        ts,
+                        progress,
+                        &attr,
+                        metrics,
+                    ) {
+                        Ok(Some(session)) => analysis.sessions.add_session(session),
+                        Ok(None) => {}
+                        Err(e) => eprintln!("Errore evento {}: {:?}", &event_id, e),
+                    }
+                }
+                "DictionaryLookup" => {
+                    let attr_json: String = row.get("Attributes")?;
+                    *analysis
+                        .terms
+                        .entry(on_dictionary_lookup(attr_json)?)
+                        .or_insert(0) += 1;
+                }
+                "BrightnessAdjusted" => {
+                    let attr_json: String = row.get("Attributes")?;
+                    let metr_json: String = row.get("Metrics")?;
+                    let event = on_light_adjusted(attr_json, metr_json, ts)?;
+                    analysis.brightness_history.insert(event);
+                }
+                "NaturalLightAdjusted" => {
+                    let attr_json: String = row.get("Attributes")?;
+                    let metr_json: String = row.get("Metrics")?;
+                    let event = on_light_adjusted(attr_json, metr_json, ts)?;
+                    analysis.natural_light_history.insert(event);
+                }
+                _ => {
+                    eprintln!("Unknown event: {}", event_type);
                 }
             }
-            "DictionaryLookup" => {
-                let attr_json: String = row.get("Attributes")?;
-                *analysis
-                    .terms
-                    .entry(on_dictionary_lookup(attr_json)?)
-                    .or_insert(0) += 1;
-            }
-            "BrightnessAdjusted" => {
-                let attr_json: String = row.get("Attributes")?;
-                let metr_json: String = row.get("Metrics")?;
-                let event = on_light_adjusted(attr_json, metr_json, ts)?;
-                analysis.brightness_history.insert(event);
-            }
-            "NaturalLightAdjusted" => {
-                let attr_json: String = row.get("Attributes")?;
-                let metr_json: String = row.get("Metrics")?;
-                let event = on_light_adjusted(attr_json, metr_json, ts)?;
-                analysis.natural_light_history.insert(event);
-            }
-            _ => {
-                eprintln!("Unknown event: {}", event_type);
-            }
         }
+        Ok(analysis)
     }
-    Ok(analysis)
 }
 
 fn handle_reading_session_event(
