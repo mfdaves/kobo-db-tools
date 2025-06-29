@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::str::FromStr;
 use thiserror::Error;
+use uuid::Uuid;
 
 #[derive(Debug, Error)]
 pub enum ParseError {
@@ -191,9 +192,10 @@ impl Parser {
                     }
                     "DictionaryLookup" => {
                         if option == ParseOption::All || option == ParseOption::DictionaryLookups {
+                            let session_id = current_session.as_ref().map(|s| s.id);
                             let attr_json: String = row.get("Attributes")?;
                             *terms_map
-                                .entry(on_dictionary_lookup(attr_json)?)
+                                .entry(on_dictionary_lookup(attr_json,session_id)?)
                                 .or_insert(0) += 1;
                         }
                     }
@@ -289,11 +291,11 @@ fn handle_reading_session_event(
     }
 }
 
-fn on_dictionary_lookup(attr_json: String) -> rusqlite::Result<DictionaryWord> {
+fn on_dictionary_lookup(attr_json: String,session_id:Option<Uuid>) -> rusqlite::Result<DictionaryWord> {
     let attr: DicitonaryAttributes = serde_json::from_str(&attr_json).map_err(|e| {
         rusqlite::Error::FromSqlConversionFailure(1, rusqlite::types::Type::Text, Box::new(e))
     })?;
-    Ok(DictionaryWord::new(attr.word, attr.lang))
+    Ok(DictionaryWord::new(attr.word, attr.lang,session_id))
 }
 
 fn on_light_adjusted(
