@@ -1,9 +1,7 @@
 use chrono::{DateTime, Duration, Utc};
 use uuid::Uuid;
 
-
-
-#[derive(Debug,Clone,Copy)]
+#[derive(Debug, Clone, Copy)]
 pub enum ReadingMetric {
     SecondsRead,
     PagesTurned,

@@ -6,7 +6,10 @@ impl Statistics for BrightnessHistory {
 
     fn avg(&self) -> f64 {
         if self.events.len() < 2 {
-            return self.events.first().map_or(0.0, |e| e.brightness.percentage as f64);
+            return self
+                .events
+                .first()
+                .map_or(0.0, |e| e.brightness.percentage as f64);
         }
 
         let mut weighted_sum = 0.0;
@@ -24,7 +27,9 @@ impl Statistics for BrightnessHistory {
         }
 
         if total_duration == 0.0 {
-            self.events.last().map_or(0.0, |e| e.brightness.percentage as f64)
+            self.events
+                .last()
+                .map_or(0.0, |e| e.brightness.percentage as f64)
         } else {
             weighted_sum / total_duration
         }
@@ -41,7 +46,10 @@ impl Statistics for NaturalLightHistory {
 
     fn avg(&self) -> f64 {
         if self.events.len() < 2 {
-            return self.events.first().map_or(0.0, |e| e.brightness.percentage as f64);
+            return self
+                .events
+                .first()
+                .map_or(0.0, |e| e.brightness.percentage as f64);
         }
 
         let mut weighted_sum = 0.0;
@@ -59,14 +67,32 @@ impl Statistics for NaturalLightHistory {
         }
 
         if total_duration == 0.0 {
-            self.events.last().map_or(0.0, |e| e.brightness.percentage as f64)
+            self.events
+                .last()
+                .map_or(0.0, |e| e.brightness.percentage as f64)
         } else {
             weighted_sum / total_duration
         }
     }
 
-    fn calculate_percentile(&self, _metric: Self::Metric, _percentiles: &[f64]) -> Vec<f64> {
-        // Placeholder implementation
-        unimplemented!("Percentile calculation is not implemented for NaturalLightHistory");
+    fn calculate_percentile(&self, _metric: Self::Metric, percentiles: &[f64]) -> Vec<f64> {
+        let mut values: Vec<f64> = self
+            .events
+            .iter()
+            .map(|e| e.brightness.percentage as f64)
+            .collect();
+
+        if values.is_empty() {
+            return vec![0.0];
+        }
+
+        values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Less));
+        percentiles
+            .iter()
+            .map(|&p| {
+                let idx = ((p.clamp(0.0, 1.0)) * ((values.len() - 1) as f64)).round() as usize;
+                values.get(idx).copied().unwrap_or(0.0)
+            })
+            .collect()
     }
 }

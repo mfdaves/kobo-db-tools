@@ -1,2 +1,4 @@
 /target
-.csv
+*.csv
+*.json
+*.md

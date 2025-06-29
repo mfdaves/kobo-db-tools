@@ -1,22 +1,21 @@
-use crate::Statistics;           
-use crate::{ReadingSessions, ReadingMetric}; 
-use std::cmp::Ordering; 
+use crate::Statistics;
+use crate::{ReadingMetric, ReadingSessions};
+use std::cmp::Ordering;
 
-impl Statistics for ReadingSessions{
+impl Statistics for ReadingSessions {
+    type Metric = ReadingMetric;
 
-    type Metric = ReadingMetric; 
-    
     fn avg(&self) -> f64 {
-	    let valid_sessions_seconds: Vec<f64> = self
-	        .valid_sessions()
-	        .filter_map(|s| s.seconds_read.map(|sec| sec as f64))
-	        .collect();
+        let valid_sessions_seconds: Vec<f64> = self
+            .valid_sessions()
+            .filter_map(|s| s.seconds_read.map(|sec| sec as f64))
+            .collect();
 
-	    if valid_sessions_seconds.is_empty() {
-	        0.0
-	    } else {
-	        valid_sessions_seconds.iter().sum::<f64>() / valid_sessions_seconds.len() as f64
-	    }
+        if valid_sessions_seconds.is_empty() {
+            0.0
+        } else {
+            valid_sessions_seconds.iter().sum::<f64>() / valid_sessions_seconds.len() as f64
+        }
     }
     fn calculate_percentile(&self, metric: ReadingMetric, percentiles: &[f64]) -> Vec<f64> {
         let mut values: Vec<f64> = self
@@ -33,7 +32,7 @@ impl Statistics for ReadingSessions{
             return vec![0.0];
         }
 
-        values.sort_by(|a, b| a.partial_cmp(&b).unwrap_or(Ordering::Less));
+        values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(Ordering::Less));
         percentiles
             .iter()
             .map(|&p| {

@@ -1,6 +1,6 @@
 use crate::model::{
-    Brightness, BrightnessEvent, BrightnessHistory, DictionaryWord, NaturalLightHistory,
-    ReadingSession, ReadingSessions,
+    get_bookmarks, Bookmark, Brightness, BrightnessEvent, BrightnessHistory, DictionaryWord,
+    NaturalLightHistory, ReadingSession, ReadingSessions,
 };
 use chrono::{DateTime, Utc};
 use rusqlite::Connection;
@@ -62,6 +62,7 @@ pub struct EventAnalysis {
     pub terms: HashMap<DictionaryWord, usize>,
     pub brightness_history: BrightnessHistory,
     pub natural_light_history: NaturalLightHistory,
+    pub bookmarks: Vec<Bookmark>,
 }
 
 pub fn get_events(db: &Connection) -> rusqlite::Result<EventAnalysis> {
@@ -82,6 +83,7 @@ pub fn get_events(db: &Connection) -> rusqlite::Result<EventAnalysis> {
         terms: HashMap::new(),
         brightness_history: BrightnessHistory::new(),
         natural_light_history: NaturalLightHistory::new(),
+        bookmarks: get_bookmarks(db)?,
     };
 
     let mut current_session: Option<ReadingSession> = None;
@@ -97,8 +99,8 @@ pub fn get_events(db: &Connection) -> rusqlite::Result<EventAnalysis> {
         match event_type.as_str() {
             "OpenContent" | "LeaveContent" => {
                 let attr_json: String = row.get("Attributes")?;
-                let attr: ReadingSessionAttributes = serde_json::from_str(&attr_json)
-                    .map_err(|e| {
+                let attr: ReadingSessionAttributes =
+                    serde_json::from_str(&attr_json).map_err(|e| {
                         rusqlite::Error::FromSqlConversionFailure(
                             1,
                             rusqlite::types::Type::Text,
@@ -109,15 +111,15 @@ pub fn get_events(db: &Connection) -> rusqlite::Result<EventAnalysis> {
 
                 let metrics = if event_type == "LeaveContent" {
                     let metr_json: String = row.get("Metrics")?;
-                    Some(serde_json::from_str::<LeaveContentMetrics>(&metr_json).map_err(
-                        |e| {
+                    Some(
+                        serde_json::from_str::<LeaveContentMetrics>(&metr_json).map_err(|e| {
                             rusqlite::Error::FromSqlConversionFailure(
                                 2,
                                 rusqlite::types::Type::Text,
                                 Box::new(e),
                             )
-                        },
-                    )?)
+                        })?,
+                    )
                 } else {
                     None
                 };
@@ -185,7 +187,7 @@ fn handle_reading_session_event(
         }
         "LeaveContent" => {
             if let Some(ref mut session) = current_session {
-                let open_content_id = session.open_content_id.clone();
+                let _open_content_id = session.open_content_id.clone();
                 let m = metrics.ok_or(ParseError::SessionCompletionFailed)?;
                 session
                     .complete_session(
@@ -196,10 +198,7 @@ fn handle_reading_session_event(
                         m.pages_turned as u64,
                         event_id.to_string(),
                     )
-                    .map_err(|_| {
-                        println!("START {:?} => END {:?}", open_content_id, event_id);
-                        ParseError::SessionCompletionFailed
-                    })?;
+                    .map_err(|_| ParseError::SessionCompletionFailed)?;
 
                 let completed = std::mem::take(session);
                 *current_session = None;

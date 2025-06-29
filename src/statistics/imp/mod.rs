@@ -1,2 +1,2 @@
-pub mod sessions;
 pub mod brightness;
+pub mod sessions;
