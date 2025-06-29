@@ -53,23 +53,40 @@ kobo-db-tools = "0.0.3" # Or the latest version
 Then, you can parse a KoboReader.sqlite database and access the extracted data:
 
 ```rust
-use kobo_db_tools::parser::Parser;
+use kobo_db_tools::parser::{Parser, ParseOption};
 use kobo_db_tools::export::{export_bookmarks, ExportFormat};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let db_path = "path/to/your/KoboReader.sqlite"; // Replace with the actual path to your database
 
-    // Parse the database
-    let analysis = Parser::parse_from_str(db_path)?;
+    // Parse all available data
+    let analysis_all = Parser::parse_from_str(db_path, ParseOption::All)?;
 
-    println!("Total reading sessions: {}", analysis.sessions.sessions_count());
-    println!("Total dictionary lookups: {}", analysis.terms.len());
-    println!("Total bookmarks: {}", analysis.bookmarks.len());
+    if let Some(sessions) = analysis_all.sessions {
+        println!("Total reading sessions (All): {}", sessions.sessions_count());
+    }
+    if let Some(terms) = analysis_all.terms {
+        println!("Total dictionary lookups (All): {}", terms.len());
+    }
+    if let Some(bookmarks) = analysis_all.bookmarks {
+        println!("Total bookmarks (All): {}", bookmarks.len());
+        // Example: Export bookmarks to a Markdown file
+        let output_path = "bookmarks.md";
+        export_bookmarks(&bookmarks, ExportFormat::Markdown, output_path)?;
+        println!("Bookmarks exported to {}", output_path);
+    }
 
-    // Example: Export bookmarks to a Markdown file
-    let output_path = "bookmarks.md";
-    export_bookmarks(&analysis.bookmarks, ExportFormat::Markdown, output_path)?;
-    println!("Bookmarks exported to {}", output_path);
+    // Parse only reading sessions
+    let analysis_sessions = Parser::parse_from_str(db_path, ParseOption::ReadingSessions)?;
+    if let Some(sessions) = analysis_sessions.sessions {
+        println!("Total reading sessions (only sessions): {}", sessions.sessions_count());
+    }
+
+    // Parse only dictionary lookups
+    let analysis_terms = Parser::parse_from_str(db_path, ParseOption::DictionaryLookups)?;
+    if let Some(terms) = analysis_terms.terms {
+        println!("Total dictionary lookups (only terms): {}", terms.len());
+    }
 
     Ok(())
 }
@@ -98,7 +115,7 @@ This project is in its early stages and welcomes contributions! If you have idea
 
 ## License
 
-This project is released under the [MIT License](LICENSE). (Please add the LICENSE file to the repository)
+This project is released under the [MIT License](LICENSE).
 
 ---
 
