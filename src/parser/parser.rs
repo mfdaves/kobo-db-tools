@@ -69,14 +69,7 @@ pub struct Parser;
 
 impl Parser {
     pub fn parse_events(db: &Connection) -> rusqlite::Result<EventAnalysis> {
-        let q = "SELECT Id, Type, Timestamp, Attributes, Metrics
-                 FROM AnalyticsEvents
-                 WHERE Type IN
-                 (  'OpenContent', 'LeaveContent',
-                    'DictionaryLookup',
-                    'BrightnessAdjusted','NaturalLightAdjusted'
-                 )
-                 ORDER BY Timestamp ASC;";
+        let q = "SELECT Id, Type, Timestamp, Attributes, Metrics\n                 FROM AnalyticsEvents\n                 WHERE Type IN\n                 (  'OpenContent', 'LeaveContent',\n                    'DictionaryLookup',\n                    'BrightnessAdjusted','NaturalLightAdjusted'\n                 )\n                 ORDER BY Timestamp ASC;";
 
         let mut stmt = db.prepare(q)?;
         let mut rows = stmt.query([])?;
