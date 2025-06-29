@@ -58,46 +58,6 @@ This Rust project provides tools to:
 
 *   **Multi-Device Data Merging:** A key objective is to facilitate the merging of reading data from multiple Kobo devices into a single, unified dataset, providing a holistic view of your reading across all your devices.
 
-## How to Use
-
-### Prerequisites
-
-Ensure you have [Rust](https://www.rust-lang.org/tools/install) installed on your system.
-
-### Cloning the Repository
-
-```bash
-git clone https://github.com/your-username/kobo-reader-db.git
-cd kobo-reader-db
-```
-
-### Extracting the Database from Your Kobo
-
-1.  Connect your Kobo to your computer.
-2.  Navigate to the `.kobo/KoboReader.sqlite` folder (on Linux/macOS, `.kobo` might be a hidden folder).
-3.  Copy the file `KoboReader.sqlite` to a secure location on your computer (e.g., the root of your `kobo-reader-db` project directory).
-
-### Running the Analysis
-
-Modify the database path in the `src/bin/dev.rs` file to point to your copied `KoboReader.sqlite`:
-
-```rust
-// src/bin/dev.rs
-
-fn main() -> Result<(), ()> {
-    let path = "/path/to/your/KoboReader.sqlite"; // <-- Modify this path
-    // ... rest of the code ...
-}
-```
-
-Then, execute the project:
-
-```bash
-cargo run --bin dev
-```
-
-The output will display the extracted statistics, including the weighted average of brightness and natural light.
-
 ## Contributing
 
 This project is in its early stages and welcomes contributions! If you have ideas for new features, improvements, or bug fixes, feel free to open an issue or a pull request. Before contributing, please review the contribution guidelines (to be defined).
