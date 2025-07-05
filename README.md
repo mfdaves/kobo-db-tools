@@ -37,7 +37,7 @@ The only remaining trace resides in the `Event` table, within the `ExtraData` fi
 
 This Rust project provides tools to:
 
-*   **Parse the `KoboReader.sqlite` database:** Extract reading events, dictionary lookups, bookmarks, and brightness adjustments.
+*   **Parse the `KoboReader.sqlite` database:** Extract reading events, dictionary lookups, bookmarks, and brightness adjustments with granular control using `ParseOption`.
 *   **Analyze Reading Sessions:** Calculate metrics such as reading time, pages turned, and more.
 *   **Track Brightness Usage:** Analyze how and when you adjust screen brightness (both manual and natural light).
 *   **Export Data:** Export bookmarks and dictionary lookups to various formats (Markdown, CSV, JSON) using the `Export` trait.
@@ -48,10 +48,10 @@ To use `kobo-db-tools` in your Rust project, add it as a dependency in your `Car
 
 ```toml
 [dependencies]
-kobo-db-tools = "0.0.7" # Or the latest version
+kobo-db-tools = "0.0.8" # Or the latest version
 ```
 
-Then, you can parse a `KoboReader.sqlite` database and export the extracted data using the `Export` trait:
+Then, you can parse a `KoboReader.sqlite` database with specific options and export the extracted data:
 
 ```rust
 use kobo_db_tools::parser::{Parser, ParseOption};
@@ -61,31 +61,39 @@ use std::fs;
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let db_path = "path/to/your/KoboReader.sqlite"; // Replace with the actual path
 
-    // Parse all available data
-    let analysis = Parser::parse_from_str(db_path, ParseOption::All)?;
+    // --- Example 1: Parse only bookmarks and export to Markdown ---
+    println!("Parsing bookmarks...");
+    let analysis_bookmarks = Parser::parse_from_str(db_path, ParseOption::Bookmarks)?;
 
-    // Export bookmarks to Markdown
-    if let Some(bookmarks) = &analysis.bookmarks {
-        println!("Found {} bookmarks. Exporting to Markdown...", bookmarks.len());
+    if let Some(bookmarks) = &analysis_bookmarks.bookmarks {
+        println!("- Found {} bookmarks. Exporting to Markdown...", bookmarks.len());
         let md_content = bookmarks.to_md()?;
         fs::write("bookmarks.md", md_content)?;
     }
 
-    // Export dictionary lookups to CSV
-    if let Some(terms) = &analysis.terms {
-        println!("Found {} dictionary lookups. Exporting to CSV...", terms.len());
-        let csv_content = terms.to_csv()?;
-        fs::write("dictionary.csv", csv_content)?;
-    }
-    
-    // Export dictionary lookups to JSON
-    if let Some(terms) = &analysis.terms {
-        println!("Found {} dictionary lookups. Exporting to JSON...", terms.len());
+    // --- Example 2: Parse only dictionary lookups and export to JSON ---
+    println!("\nParsing dictionary lookups...");
+    let analysis_dict = Parser::parse_from_str(db_path, ParseOption::DictionaryLookups)?;
+
+    if let Some(terms) = &analysis_dict.terms {
+        println!("- Found {} dictionary lookups. Exporting to JSON...", terms.len());
         let json_content = terms.to_json()?;
         fs::write("dictionary.json", json_content)?;
     }
 
-    println!("\nExports complete!");
+    // --- Example 3: Parse all data and access reading sessions ---
+    println!("\nParsing all data...");
+    let analysis_all = Parser::parse_from_str(db_path, ParseOption::All)?;
+
+    if let Some(sessions) = &analysis_all.sessions {
+        println!("- Found {} reading sessions.", sessions.sessions_count());
+    }
+    
+    if let Some(brightness) = &analysis_all.brightness_history {
+        println!("- Found {} brightness events.", brightness.events.len());
+    }
+
+    println!("\nAnalysis and exports complete!");
     Ok(())
 }
 ```
