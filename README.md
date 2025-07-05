@@ -37,9 +37,10 @@ The only remaining trace resides in the `Event` table, within the `ExtraData` fi
 
 This Rust project provides tools to:
 
-*   **Parse the `KoboReader.sqlite` database:** Extract reading events, dictionary lookups, and brightness adjustments.
+*   **Parse the `KoboReader.sqlite` database:** Extract reading events, dictionary lookups, bookmarks, and brightness adjustments.
 *   **Analyze Reading Sessions:** Calculate metrics such as reading time, pages turned, and more.
 *   **Track Brightness Usage:** Analyze how and when you adjust screen brightness (both manual and natural light).
+*   **Export Data:** Export bookmarks and dictionary lookups to various formats (Markdown, CSV, JSON) using the `Export` trait.
 
 ### How to Use
 
@@ -47,47 +48,44 @@ To use `kobo-db-tools` in your Rust project, add it as a dependency in your `Car
 
 ```toml
 [dependencies]
-kobo-db-tools = "0.0.6" # Or the latest version
+kobo-db-tools = "0.0.7" # Or the latest version
 ```
 
-Then, you can parse a KoboReader.sqlite database and access the extracted data:
+Then, you can parse a `KoboReader.sqlite` database and export the extracted data using the `Export` trait:
 
 ```rust
 use kobo_db_tools::parser::{Parser, ParseOption};
-use kobo_db_tools::export::{export_bookmarks, ExportFormat};
+use kobo_db_tools::export::Export;
+use std::fs;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let db_path = "path/to/your/KoboReader.sqlite"; // Replace with the actual path to your database
+    let db_path = "path/to/your/KoboReader.sqlite"; // Replace with the actual path
 
     // Parse all available data
-    let analysis_all = Parser::parse_from_str(db_path, ParseOption::All)?;
+    let analysis = Parser::parse_from_str(db_path, ParseOption::All)?;
 
-    if let Some(sessions) = analysis_all.sessions {
-        println!("Total reading sessions (All): {}", sessions.sessions_count());
-    }
-    if let Some(terms) = analysis_all.terms {
-        println!("Total dictionary lookups (All): {}", terms.len());
-    }
-    if let Some(bookmarks) = analysis_all.bookmarks {
-        println!("Total bookmarks (All): {}", bookmarks.len());
-        // Example: Export bookmarks to a Markdown file
-        let output_path = "bookmarks.md";
-        export_bookmarks(&bookmarks, ExportFormat::Markdown, output_path)?;
-        println!("Bookmarks exported to {}", output_path);
+    // Export bookmarks to Markdown
+    if let Some(bookmarks) = &analysis.bookmarks {
+        println!("Found {} bookmarks. Exporting to Markdown...", bookmarks.len());
+        let md_content = bookmarks.to_md()?;
+        fs::write("bookmarks.md", md_content)?;
     }
 
-    // Parse only reading sessions
-    let analysis_sessions = Parser::parse_from_str(db_path, ParseOption::ReadingSessions)?;
-    if let Some(sessions) = analysis_sessions.sessions {
-        println!("Total reading sessions (only sessions): {}", sessions.sessions_count());
+    // Export dictionary lookups to CSV
+    if let Some(terms) = &analysis.terms {
+        println!("Found {} dictionary lookups. Exporting to CSV...", terms.len());
+        let csv_content = terms.to_csv()?;
+        fs::write("dictionary.csv", csv_content)?;
+    }
+    
+    // Export dictionary lookups to JSON
+    if let Some(terms) = &analysis.terms {
+        println!("Found {} dictionary lookups. Exporting to JSON...", terms.len());
+        let json_content = terms.to_json()?;
+        fs::write("dictionary.json", json_content)?;
     }
 
-    // Parse only dictionary lookups
-    let analysis_terms = Parser::parse_from_str(db_path, ParseOption::DictionaryLookups)?;
-    if let Some(terms) = analysis_terms.terms {
-        println!("Total dictionary lookups (only terms): {}", terms.len());
-    }
-
+    println!("\nExports complete!");
     Ok(())
 }
 ```
@@ -101,17 +99,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     *   Linking dictionary lookups directly to the reading sessions in which they occurred.
     *   Aggregating and grouping all collected information by book, providing a comprehensive overview of your reading habits for each title.
 
-*   **Flexible Data Export:** To maximize the utility of your data, the project plans to support various export formats, allowing you to use your reading statistics in other tools and applications:
-    *   **JSON:** For easy integration with web applications or other programmatic uses.
-    *   **CSV:** For spreadsheet analysis and compatibility with a wide range of data tools.
-    *   **Markdown:** For human-readable summaries and reports.
-    *   **SQLite:** To allow merging data from multiple Kobo devices or integrating with other SQLite-based databases.
+*   **Flexible Data Export:** To maximize the utility of your data, the project already supports various export formats for bookmarks and dictionary lookups (JSON, CSV, Markdown). Future plans include:
+    *   Expanding export support to all data types (e.g., reading sessions).
+    *   Adding new export formats like **SQLite** to allow merging data from multiple Kobo devices or integrating with other SQLite-based databases.
 
 *   **Multi-Device Data Merging:** A key objective is to facilitate the merging of reading data from multiple Kobo devices into a single, unified dataset, providing a holistic view of your reading across all your devices.
 
 ## Contributing
 
-This project is in its early stages and welcomes contributions! If you have ideas for new features, improvements, or bug fixes, feel free to open an issue or a pull request. Before contributing, please review the contribution guidelines (to be defined).
+This project is in its early stages and welcomes contributions! If you have ideas for new features, improvements, or bug fixes, feel free to open an issue or a pull request.
 
 ## License
 
