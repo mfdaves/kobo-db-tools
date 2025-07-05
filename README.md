@@ -38,8 +38,8 @@ The only remaining trace resides in the `Event` table, within the `ExtraData` fi
 This Rust project provides tools to:
 
 *   **Parse the `KoboReader.sqlite` database:** Extract reading events, dictionary lookups, bookmarks, and brightness adjustments with granular control using `ParseOption`.
-*   **Analyze Reading Sessions:** Calculate metrics such as reading time, pages turned, and more.
-*   **Track Brightness Usage:** Analyze how and when you adjust screen brightness (both manual and natural light).
+*   **Analyze Reading Sessions:** Calculate metrics such as reading time, pages turned, and percentiles.
+*   **Track Brightness Usage:** Analyze how and when you adjust screen brightness.
 *   **Export Data:** Export bookmarks and dictionary lookups to various formats (Markdown, CSV, JSON) using the `Export` trait.
 
 ### How to Use
@@ -48,49 +48,52 @@ To use `kobo-db-tools` in your Rust project, add it as a dependency in your `Car
 
 ```toml
 [dependencies]
-kobo-db-tools = "0.0.8" # Or the latest version
+kobo-db-tools = "0.0.10" # Or the latest version
 ```
 
-Then, you can parse a `KoboReader.sqlite` database with specific options and export the extracted data:
+Then, you can import the necessary components and use the parser. Note that `Parser` and `ParseOption` are exposed at the crate root for easier access.
 
 ```rust
-use kobo_db_tools::parser::{Parser, ParseOption};
-use kobo_db_tools::export::Export;
+use kobo_db_tools::{Parser, ParseOption, ReadingMetric, Statistics, export::Export};
 use std::fs;
+use std::error::Error;
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> Result<(), Box<dyn Error>> {
     let db_path = "path/to/your/KoboReader.sqlite"; // Replace with the actual path
 
-    // --- Example 1: Parse only bookmarks and export to Markdown ---
-    println!("Parsing bookmarks...");
-    let analysis_bookmarks = Parser::parse_from_str(db_path, ParseOption::Bookmarks)?;
+    // --- Example 1: Parse all data for analysis and export ---
+    println!("Parsing all data...");
+    let analysis = Parser::parse_from_str(db_path, ParseOption::All)?;
 
-    if let Some(bookmarks) = &analysis_bookmarks.bookmarks {
-        println!("- Found {} bookmarks. Exporting to Markdown...", bookmarks.len());
+    // --- Statistical Analysis ---
+    if let Some(sessions) = &analysis.sessions {
+        println!("\n--- Reading Session Analysis ---");
+        println!("Found {} reading sessions.", sessions.sessions_count());
+
+        // Calculate average reading time
+        let avg_seconds = sessions.avg();
+        println!("Average reading time: {:.2} seconds", avg_seconds);
+
+        // Calculate 50th and 90th percentile for pages turned
+        let percentiles = sessions.calculate_percentile(ReadingMetric::PagesTurned, &[0.5, 0.9]);
+        println!("Pages Turned - 50th percentile (median): {}", percentiles[0]);
+        println!("Pages Turned - 90th percentile: {}", percentiles[1]);
+    }
+
+    // --- Data Export ---
+    if let Some(bookmarks) = &analysis.bookmarks {
+        println!("\n--- Data Export ---");
+        println!("Found {} bookmarks. Exporting to Markdown...", bookmarks.len());
         let md_content = bookmarks.to_md()?;
         fs::write("bookmarks.md", md_content)?;
     }
 
-    // --- Example 2: Parse only dictionary lookups and export to JSON ---
-    println!("\nParsing dictionary lookups...");
-    let analysis_dict = Parser::parse_from_str(db_path, ParseOption::DictionaryLookups)?;
-
-    if let Some(terms) = &analysis_dict.terms {
-        println!("- Found {} dictionary lookups. Exporting to JSON...", terms.len());
-        let json_content = terms.to_json()?;
+    if let Some(terms) = &analysis.terms {
+        // Note: The parser returns a HashMap, so we extract the keys
+        let term_list: Vec<_> = terms.keys().cloned().collect();
+        println!("Found {} dictionary lookups. Exporting to JSON...", term_list.len());
+        let json_content = term_list.as_slice().to_json()?;
         fs::write("dictionary.json", json_content)?;
-    }
-
-    // --- Example 3: Parse all data and access reading sessions ---
-    println!("\nParsing all data...");
-    let analysis_all = Parser::parse_from_str(db_path, ParseOption::All)?;
-
-    if let Some(sessions) = &analysis_all.sessions {
-        println!("- Found {} reading sessions.", sessions.sessions_count());
-    }
-    
-    if let Some(brightness) = &analysis_all.brightness_history {
-        println!("- Found {} brightness events.", brightness.events.len());
     }
 
     println!("\nAnalysis and exports complete!");

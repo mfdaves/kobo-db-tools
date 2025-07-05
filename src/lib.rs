@@ -4,5 +4,5 @@ pub mod parser;
 pub mod statistics;
 
 pub use model::*;
-pub use parser::parser::{EventAnalysis, ParseError, Parser};
+pub use parser::parser::{EventAnalysis, ParseError, ParseOption, Parser};
 pub use statistics::*;
