@@ -47,7 +47,7 @@ To use `kobo-db-tools` in your Rust project, add it as a dependency in your `Car
 
 ```toml
 [dependencies]
-kobo-db-tools = "0.0.3" # Or the latest version
+kobo-db-tools = "0.0.6" # Or the latest version
 ```
 
 Then, you can parse a KoboReader.sqlite database and access the extracted data:
