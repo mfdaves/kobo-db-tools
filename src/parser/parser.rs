@@ -1,10 +1,10 @@
 use crate::{
-    get_bookmarks, Bookmark, Brightness, BrightnessEvent, BrightnessHistory, DictionaryWord,
+    get_bookmarks, Book, Bookmark, Brightness, BrightnessEvent, BrightnessHistory, DictionaryWord,
     NaturalLightHistory, ReadingSession, ReadingSessions,
 };
 use chrono::{DateTime, Utc};
 use rusqlite::Connection;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::str::FromStr;
 use thiserror::Error;
@@ -25,6 +25,8 @@ struct ReadingSessionAttributes {
     progress: String,
     volumeid: Option<String>,
     title: Option<String>,
+    #[serde(rename = "attribution")]
+    author: Option<String>,
 }
 
 #[derive(serde::Deserialize)]
@@ -66,6 +68,8 @@ pub enum ParseOption {
     BrightnessHistory,
     NaturalLightHistory,
     Bookmarks,
+    AppStart,
+    PluggedIn,
 }
 
 #[derive(Debug, Default)]
@@ -75,6 +79,7 @@ pub struct EventAnalysis {
     pub brightness_history: Option<BrightnessHistory>,
     pub natural_light_history: Option<NaturalLightHistory>,
     pub bookmarks: Option<Vec<Bookmark>>,
+    pub books: Option<Vec<Book>>,
 }
 
 pub struct Parser;
@@ -112,6 +117,9 @@ impl Parser {
             ParseOption::Bookmarks => {
                 get_bookmarks_flag = true;
             }
+            ParseOption::AppStart | ParseOption::PluggedIn => {
+                // Do nothing for now
+            }
         }
 
         if get_bookmarks_flag {
@@ -132,6 +140,8 @@ impl Parser {
             let mut terms_map = HashMap::new();
             let mut brightness_hist = BrightnessHistory::new();
             let mut natural_light_hist = NaturalLightHistory::new();
+            let mut volume_ids_to_query = HashSet::new();
+            let mut books_from_events = HashMap::new();
 
             while let Some(row) = rows.next()? {
                 let event_id: String = row.get("Id")?;
@@ -158,6 +168,18 @@ impl Parser {
                                 )
                             })?;
                             let progress = attr.progress.parse::<u8>().unwrap_or(0);
+
+                            if attr.volumeid.is_none() {
+                                if let (Some(title), Some(author)) = (attr.title.clone(), attr.author.clone()) {
+                                    if !books_from_events.contains_key(&title) {
+                                        books_from_events.insert(title.clone(), Book::new(author, title, None, "".to_string()));
+                                    }
+                                }
+                            } else if attr.title.is_none() {
+                                if let Some(volume_id) = &attr.volumeid {
+                                    volume_ids_to_query.insert(volume_id.clone());
+                                }
+                            }
 
                             let metrics = if event_type == "LeaveContent" {
                                 let metr_json: String = row.get("Metrics")?;
@@ -195,7 +217,7 @@ impl Parser {
                             let session_id = current_session.as_ref().map(|s| s.id);
                             let attr_json: String = row.get("Attributes")?;
                             *terms_map
-                                .entry(on_dictionary_lookup(attr_json,session_id)?)
+                                .entry(on_dictionary_lookup(attr_json, session_id)?)
                                 .or_insert(0) += 1;
                         }
                     }
@@ -221,6 +243,19 @@ impl Parser {
                     }
                 }
             }
+
+            let mut books_from_db = get_books_by_volume_id(db, &volume_ids_to_query)?;
+            books_from_db.extend(books_from_events);
+            analysis.books = Some(books_from_db.values().cloned().collect());
+
+            for session in sessions_vec.get_mut_sessions() {
+                if let Some(volume_id) = &session.volume_id {
+                    if let Some(book) = books_from_db.get(volume_id) {
+                        session.book_title = Some(book.title.clone());
+                    }
+                }
+            }
+
             if option == ParseOption::All || option == ParseOption::ReadingSessions {
                 analysis.sessions = Some(sessions_vec);
             }
@@ -291,11 +326,14 @@ fn handle_reading_session_event(
     }
 }
 
-fn on_dictionary_lookup(attr_json: String,session_id:Option<Uuid>) -> rusqlite::Result<DictionaryWord> {
+fn on_dictionary_lookup(
+    attr_json: String,
+    session_id: Option<Uuid>,
+) -> rusqlite::Result<DictionaryWord> {
     let attr: DicitonaryAttributes = serde_json::from_str(&attr_json).map_err(|e| {
         rusqlite::Error::FromSqlConversionFailure(1, rusqlite::types::Type::Text, Box::new(e))
     })?;
-    Ok(DictionaryWord::new(attr.word, attr.lang,session_id))
+    Ok(DictionaryWord::new(attr.word, attr.lang, session_id))
 }
 
 fn on_light_adjusted(
@@ -313,6 +351,32 @@ fn on_light_adjusted(
     Ok(BrightnessEvent::new(brightness, ts))
 }
 
+fn get_books_by_volume_id(
+    db: &Connection,
+    volume_ids: &HashSet<String>,
+) -> rusqlite::Result<HashMap<String, Book>> {
+    let mut books = HashMap::new();
+    if volume_ids.is_empty() {
+        return Ok(books);
+    }
+    let mut stmt = db.prepare("SELECT BookID, Title, Attribution as Authors FROM content WHERE ContentType=6 AND BookID = ?1")?;
+
+    for volume_id in volume_ids {
+        let mut rows = stmt.query([volume_id])?;
+        if let Some(row) = rows.next()? {
+            let title: String = row.get("Title")?;
+            let authors: String = row.get("Authors")?;
+            let book_id: String = row.get("BookID")?;
+            books.insert(
+                volume_id.clone(),
+                Book::new(authors, title, None, book_id),
+            );
+        }
+    }
+
+    Ok(books)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{Parser, ParseOption};
@@ -321,7 +385,7 @@ mod tests {
     fn setup_test_db() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
         conn.execute_batch(
-            "CREATE TABLE AnalyticsEvents (\n                Id TEXT PRIMARY KEY,\n                Type TEXT NOT NULL,\n                Timestamp TEXT NOT NULL,\n                Attributes TEXT,\n                Metrics TEXT\n            );\n            CREATE TABLE content (\n                ContentID TEXT PRIMARY KEY,\n                Title TEXT\n            );\n            CREATE TABLE Bookmark (\n                BookmarkID TEXT PRIMARY KEY,\n                Text TEXT,\n                VolumeID TEXT,\n                Color INTEGER,\n                ChapterProgress REAL,\n                DateCreated TEXT,\n                DateModified TEXT\n            );",
+            "CREATE TABLE AnalyticsEvents (\n                Id TEXT PRIMARY KEY,\n                Type TEXT NOT NULL,\n                Timestamp TEXT NOT NULL,\n                Attributes TEXT,\n                Metrics TEXT\n            );\n            CREATE TABLE content (\n                ContentID TEXT PRIMARY KEY,\n                ContentType INTEGER,\n                Title TEXT,\n                Attribution TEXT,\n                BookID TEXT\n            );\n            CREATE TABLE Bookmark (\n                BookmarkID TEXT PRIMARY KEY,\n                Text TEXT,\n                VolumeID TEXT,\n                Color INTEGER,\n                ChapterProgress REAL,\n                DateCreated TEXT,\n                DateModified TEXT\n            );",
         )
         .unwrap();
         conn
@@ -338,7 +402,7 @@ mod tests {
                 "session1_open",
                 "OpenContent",
                 "2023-01-01T10:00:00Z",
-                "{\"progress\":\"0\",\"volumeid\":\"book1\",\"title\":\"Book One\"}", ""
+                "{\"progress\":\"0\",\"volumeid\":\"book1\"}", ""
             ],
         ).unwrap();
         db.execute(
@@ -347,7 +411,7 @@ mod tests {
                 "session1_leave",
                 "LeaveContent",
                 "2023-01-01T10:05:00Z",
-                "{\"progress\":\"10\",\"volumeid\":\"book1\",\"title\":\"Book One\"}", "{\"ButtonPressCount\":10,\"SecondsRead\":300,\"PagesTurned\":5}"
+                "{\"progress\":\"10\",\"volumeid\":\"book1\"}", "{\"ButtonPressCount\":10,\"SecondsRead\":300,\"PagesTurned\":5}"
             ],
         ).unwrap();
         db.execute(
@@ -379,8 +443,8 @@ mod tests {
         ).unwrap();
 
         db.execute(
-            "INSERT INTO content (ContentID, Title) VALUES (?, ?)",
-            &["book1", "Book One"],
+            "INSERT INTO content (ContentID, Title, ContentType, Attribution, BookID) VALUES (?, ?, ?, ?, ?)",
+            &["book1", "Book One", "6", "Author One", "book1"],
         )
         .unwrap();
         db.execute(
@@ -404,6 +468,9 @@ mod tests {
 
         assert!(analysis.bookmarks.is_some());
         assert_eq!(analysis.bookmarks.unwrap().len(), 1);
+
+        assert!(analysis.books.is_some());
+        assert_eq!(analysis.books.unwrap().len(), 1);
     }
 
     #[test]
@@ -415,7 +482,7 @@ mod tests {
                 "session1_open",
                 "OpenContent",
                 "2023-01-01T10:00:00Z",
-                "{\"progress\":\"0\",\"volumeid\":\"book1\",\"title\":\"Book One\"}", ""
+                "{\"progress\":\"0\",\"volumeid\":\"book1\"}", ""
             ],
         ).unwrap();
         db.execute(
@@ -424,26 +491,37 @@ mod tests {
                 "session1_leave",
                 "LeaveContent",
                 "2023-01-01T10:05:00Z",
-                "{\"progress\":\"10\",\"volumeid\":\"book1\",\"title\":\"Book One\"}", "{\"ButtonPressCount\":10,\"SecondsRead\":300,\"PagesTurned\":5}"
+                "{\"progress\":\"10\",\"volumeid\":\"book1\"}", "{\"ButtonPressCount\":10,\"SecondsRead\":300,\"PagesTurned\":5}"
             ],
         ).unwrap();
+        
+        db.execute(
+            "INSERT INTO content (ContentID, Title, ContentType, Attribution, BookID) VALUES (?, ?, ?, ?, ?)",
+            &["book1", "The Real Book Title", "6", "Author One", "book1"],
+        )
+        .unwrap();
 
         let analysis = Parser::parse_events(&db, ParseOption::ReadingSessions).unwrap();
 
         assert!(analysis.sessions.is_some());
-        assert_eq!(analysis.sessions.unwrap().sessions_count(), 1);
+        let sessions = analysis.sessions.unwrap();
+        assert_eq!(sessions.sessions_count(), 1);
+        let session = sessions.get_sessions().get(0).unwrap();
+        assert_eq!(session.book_title.as_deref(), Some("The Real Book Title"));
         assert!(analysis.terms.is_none());
         assert!(analysis.brightness_history.is_none());
         assert!(analysis.natural_light_history.is_none());
         assert!(analysis.bookmarks.is_none());
+        assert!(analysis.books.is_some());
+        assert_eq!(analysis.books.unwrap().len(), 1);
     }
 
     #[test]
     fn test_parse_events_bookmarks() {
         let db = setup_test_db();
         db.execute(
-            "INSERT INTO content (ContentID, Title) VALUES (?, ?)",
-            &["book1", "Book One"],
+            "INSERT INTO content (ContentID, Title, ContentType, Attribution, BookID) VALUES (?, ?, ?, ?, ?)",
+            &["book1", "Book One", "6", "Author One", "book1"],
         )
         .unwrap();
         db.execute(
@@ -459,5 +537,6 @@ mod tests {
         assert!(analysis.natural_light_history.is_none());
         assert!(analysis.bookmarks.is_some());
         assert_eq!(analysis.bookmarks.unwrap().len(), 1);
+        assert!(analysis.books.is_none());
     }
 }

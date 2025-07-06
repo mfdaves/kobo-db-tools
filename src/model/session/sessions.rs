@@ -30,4 +30,10 @@ impl ReadingSessions {
     pub fn sessions_count(&self) -> usize {
         self.sessions.len()
     }
+    pub fn get_sessions(&self) -> &Vec<ReadingSession> {
+        &self.sessions
+    }
+    pub fn get_mut_sessions(&mut self) -> &mut Vec<ReadingSession> {
+        &mut self.sessions
+    }
 }
