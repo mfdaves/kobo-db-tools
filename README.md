@@ -48,7 +48,7 @@ To use `kobo-db-tools` in your Rust project, add it as a dependency in your `Car
 
 ```toml
 [dependencies]
-kobo-db-tools = "0.0.10" # Or the latest version
+kobo-db-tools = "0.0.11" # Or the latest version
 ```
 
 Then, you can import the necessary components and use the parser. Note that `Parser` and `ParseOption` are exposed at the crate root for easier access.
