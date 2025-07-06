@@ -96,6 +96,14 @@ fn main() -> Result<(), Box<dyn Error>> {
         fs::write("dictionary.json", json_content)?;
     }
 
+    // --- Display Books ---
+    if let Some(books) = &analysis.books {
+        println!("\n--- Books Found ---");
+        for book in books {
+            println!("- Title: {}, Author(s): {}", book.title, book.authors);
+        }
+    }
+
     println!("\nAnalysis and exports complete!");
     Ok(())
 }
