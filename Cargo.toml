@@ -4,7 +4,7 @@ version = "0.0.12"
 edition = "2021"
 description = "A Rust library to parse and analyze Kobo e-reader SQLite databases."
 license = "MIT"
-repository = "https://github.com/mfdaves/kobo-reader-db"
+repository = "https://github.com/mfdaves/kobo-db-tools"
 keywords = ["kobo", "ereader", "sqlite", "data-analysis", "reading"]
 categories = ["command-line-utilities", "data-structures", "parsing"]
 
