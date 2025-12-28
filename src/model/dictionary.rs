@@ -9,7 +9,11 @@ pub struct DictionaryWord {
 
 impl DictionaryWord {
     pub fn new(term: String, lang: String, session_id: Option<Uuid>) -> Self {
-        Self { term, lang, session_id }
+        Self {
+            term,
+            lang,
+            session_id,
+        }
     }
 
     pub fn term(&self) -> &str {

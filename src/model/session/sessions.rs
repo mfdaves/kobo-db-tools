@@ -15,12 +15,7 @@ impl ReadingSessions {
         self.sessions.push(session);
     }
     pub fn iter(&self) -> impl Iterator<Item = &ReadingSession> {
-        self.sessions.iter().filter(|s| {
-            s.is_complete()
-                && s.seconds_read
-                    .map(|sec| sec >= MIN_VALID_SESSION_TIME)
-                    .unwrap_or(false)
-        })
+        self.valid_sessions()
     }
     pub fn valid_sessions(&self) -> impl Iterator<Item = &ReadingSession> {
         self.sessions

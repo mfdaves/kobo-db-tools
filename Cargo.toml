@@ -1,6 +1,6 @@
 [package]
 name = "kobo-db-tools"
-version = "0.0.11"
+version = "0.0.12"
 edition = "2021"
 description = "A Rust library to parse and analyze Kobo e-reader SQLite databases."
 license = "MIT"

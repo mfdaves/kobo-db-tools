@@ -1,6 +1,7 @@
 pub mod bookmark;
 pub mod dictionary;
 pub mod error;
+pub mod sessions;
 
 use error::ExportError;
 

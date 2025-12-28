@@ -38,9 +38,12 @@ The only remaining trace resides in the `Event` table, within the `ExtraData` fi
 This Rust project provides tools to:
 
 *   **Parse the `KoboReader.sqlite` database:** Extract reading events, dictionary lookups, bookmarks, and brightness adjustments with granular control using `ParseOption`.
+*   **Capture AppStart and PluggedIn events:** Track device start and charge events alongside reading activity.
 *   **Analyze Reading Sessions:** Calculate metrics such as reading time, pages turned, and percentiles.
 *   **Track Brightness Usage:** Analyze how and when you adjust screen brightness.
-*   **Export Data:** Export bookmarks and dictionary lookups to various formats (Markdown, CSV, JSON) using the `Export` trait.
+*   **Correlate Sessions and Charge Cycles:** Attach app events, dictionary lookups, and brightness changes to sessions, then group by charge cycles.
+*   **Export Data:** Export bookmarks, dictionary lookups, and correlated sessions to various formats (Markdown, CSV, JSON) using the `Export` trait.
+*   **Protect AnalyticsEvents:** Install or remove the deletion-prevention trigger using `install_analytics_events_trigger`.
 
 ### How to Use
 
@@ -48,7 +51,7 @@ To use `kobo-db-tools` in your Rust project, add it as a dependency in your `Car
 
 ```toml
 [dependencies]
-kobo-db-tools = "0.0.11" # Or the latest version
+kobo-db-tools = "0.0.12" # Or the latest version
 ```
 
 Then, you can import the necessary components and use the parser. Note that `Parser` and `ParseOption` are exposed at the crate root for easier access.
@@ -109,6 +112,34 @@ fn main() -> Result<(), Box<dyn Error>> {
 }
 ```
 
+### Correlated Sessions and Charge Cycles
+
+```rust
+use kobo_db_tools::{export::Export, Parser};
+use rusqlite::Connection;
+
+let conn = Connection::open(db_path)?;
+let correlated = Parser::parse_correlated(&conn)?;
+println!("correlated sessions: {}", correlated.sessions.len());
+
+if let Some(session) = correlated.sessions.first() {
+    println!("dictionary lookups in first session: {}", session.dictionary.len());
+}
+
+let csv = correlated.sessions.as_slice().to_csv()?;
+std::fs::write("sessions.csv", csv)?;
+```
+
+### Trigger Helper
+
+```rust
+use kobo_db_tools::install_analytics_events_trigger;
+use rusqlite::Connection;
+
+let conn = Connection::open(db_path)?;
+install_analytics_events_trigger(&conn)?;
+```
+
 ### Future Enhancements and Analytical Perspectives
 
 `kobo-db-tools` aims to evolve, offering more sophisticated analytical capabilities and data export options:
@@ -118,8 +149,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     *   Linking dictionary lookups directly to the reading sessions in which they occurred.
     *   Aggregating and grouping all collected information by book, providing a comprehensive overview of your reading habits for each title.
 
-*   **Flexible Data Export:** To maximize the utility of your data, the project already supports various export formats for bookmarks and dictionary lookups (JSON, CSV, Markdown). Future plans include:
-    *   Expanding export support to all data types (e.g., reading sessions).
+*   **Flexible Data Export:** To maximize the utility of your data, the project already supports various export formats for bookmarks, dictionary lookups, and correlated sessions (JSON, CSV, Markdown). Future plans include:
     *   Adding new export formats like **SQLite** to allow merging data from multiple Kobo devices or integrating with other SQLite-based databases.
 
 *   **Multi-Device Data Merging:** A key objective is to facilitate the merging of reading data from multiple Kobo devices into a single, unified dataset, providing a holistic view of your reading across all your devices.

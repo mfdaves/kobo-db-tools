@@ -15,7 +15,7 @@ pub enum ReadingSessionError {
     InvalidProgressValue,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct ReadingSession {
     pub id: Uuid,
     pub open_content_id: String,

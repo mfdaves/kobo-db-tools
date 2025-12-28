@@ -2,9 +2,9 @@ use super::{error::ExportError, Export};
 use crate::model::Bookmark;
 use chrono::{DateTime, Utc};
 use csv::Writer;
+use serde_json;
 use std::io::Write;
 use std::str::FromStr;
-use serde_json;
 
 impl Export for [Bookmark] {
     fn to_csv(&self) -> Result<String, ExportError> {
@@ -46,18 +46,16 @@ mod tests {
 
     #[test]
     fn test_to_csv() {
-        let bookmarks = vec![
-            Bookmark {
-                content_id: "content1".to_string(),
-                content: "content text".to_string(),
-                book_id: "book1".to_string(),
-                book_title: "Book Title".to_string(),
-                color: 1,
-                chapter_progress: 0.5,
-                create_date: "2025-07-05T10:00:00Z".to_string(),
-                write_date: "2025-07-05T10:00:00Z".to_string(),
-            },
-        ];
+        let bookmarks = [Bookmark {
+            content_id: "content1".to_string(),
+            content: "content text".to_string(),
+            book_id: "book1".to_string(),
+            book_title: "Book Title".to_string(),
+            color: 1,
+            chapter_progress: 0.5,
+            create_date: "2025-07-05T10:00:00Z".to_string(),
+            write_date: "2025-07-05T10:00:00Z".to_string(),
+        }];
 
         let expected_csv = "content_id,content,book_id,book_title,color,chapter_progress,create_date,write_date\ncontent1,content text,book1,Book Title,1,0.5,2025-07-05T10:00:00Z,2025-07-05T10:00:00Z\n".to_string();
         let result = bookmarks.to_csv().unwrap();
@@ -66,18 +64,16 @@ mod tests {
 
     #[test]
     fn test_to_json() {
-        let bookmarks = vec![
-            Bookmark {
-                content_id: "content1".to_string(),
-                content: "content text".to_string(),
-                book_id: "book1".to_string(),
-                book_title: "Book Title".to_string(),
-                color: 1,
-                chapter_progress: 0.5,
-                create_date: "2025-07-05T10:00:00Z".to_string(),
-                write_date: "2025-07-05T10:00:00Z".to_string(),
-            },
-        ];
+        let bookmarks = [Bookmark {
+            content_id: "content1".to_string(),
+            content: "content text".to_string(),
+            book_id: "book1".to_string(),
+            book_title: "Book Title".to_string(),
+            color: 1,
+            chapter_progress: 0.5,
+            create_date: "2025-07-05T10:00:00Z".to_string(),
+            write_date: "2025-07-05T10:00:00Z".to_string(),
+        }];
 
         let expected_json = serde_json::to_string(&bookmarks).unwrap();
         let result = bookmarks.to_json().unwrap();

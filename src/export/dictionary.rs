@@ -60,7 +60,8 @@ mod tests {
             "hello,en,00000000-0000-0000-0000-000000000000",
             "world,en,",
             "",
-        ].join("\n");
+        ]
+        .join("\n");
         assert_eq!(words.to_csv().unwrap(), expected);
     }
 
@@ -73,7 +74,8 @@ mod tests {
             "| hello | en | 00000000-0000-0000-0000-000000000000 |",
             "| world | en | N/A |",
             "",
-        ].join("\n");
+        ]
+        .join("\n");
         assert_eq!(words.to_md().unwrap(), expected);
     }
 
